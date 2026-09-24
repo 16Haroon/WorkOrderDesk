@@ -1,0 +1,59 @@
+@page
+@model WorkOrderDesk.Pages.IndexModel
+@{
+    ViewData["Title"] = "Inbox";
+}
+
+<h1>Inbox</h1>
+<p class="lede">
+    Paste the resident's message. The desk files a category and urgency.
+    You still confirm it before anyone is sent.
+</p>
+
+<form method="post">
+    <label for="Body">Resident message</label>
+    <textarea id="Body" name="Body" rows="4" required>@Model.Body</textarea>
+    @if (Model.Error is not null)
+    {
+        <p class="error">@Model.Error</p>
+    }
+    <button type="submit">File request</button>
+</form>
+
+<h2>Requests</h2>
+@if (Model.Requests.Count == 0)
+{
+    <p>None yet.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>When</th>
+                <th>Message</th>
+                <th>Guess</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var item in Model.Requests)
+        {
+            <tr>
+                <td>@item.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                <td><a href="/requests/@item.Id">@item.Body</a></td>
+                <td>@item.SuggestedCategory / @item.SuggestedUrgency</td>
+                <td>@(item.IsReviewed ? "reviewed" : "needs review")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+<p class="hint">
+    Examples that hit the rules with no API key:
+    “the sink in 4B is dripping and there is water under the cabinet”,
+    “no heat in unit 12 since last night”,
+    “I smell gas in the kitchen”.
+    “something is off in 4B” stays unsure unless a key is set.
+</p>

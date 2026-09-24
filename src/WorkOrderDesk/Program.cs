@@ -1,42 +1,53 @@
 using Microsoft.EntityFrameworkCore;
 using WorkOrderDesk.Data;
+using WorkOrderDesk.Intake;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Keep the sqlite file next to the project. A relative path would follow
-// whichever folder the command was started from.
+// Pin the file to the project folder. A relative path would follow
+// whichever directory you happened to start the process from.
 var dbPath = Path.Combine(builder.Environment.ContentRootPath, "workorders.db");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 
+builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection(LlmOptions.SectionName));
+builder.Services.AddSingleton<RuleClassifier>();
+builder.Services.AddSingleton<SuggestionValidator>();
+builder.Services.AddScoped<IntakePipeline>();
+
+// Eight seconds is plenty for a short JSON reply. After that we keep the rules.
+builder.Services.AddHttpClient<ILlmClient, OpenAiCompatibleClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
+builder.Services.AddRazorPages();
+
 var app = builder.Build();
+
+app.UseStaticFiles();
 
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var pipeline = scope.ServiceProvider.GetRequiredService<IntakePipeline>();
 
-    // Creates the table from WorkRequest on a brand new file.
-    // It will not alter a table that is already there.
+    DropOldSchemaIfNeeded(db);
     db.Database.EnsureCreated();
 
-    // One example so the first visit is not an empty list.
+    // One sample row so the first visit is not a blank inbox.
     if (!db.WorkRequests.Any())
     {
-        db.WorkRequests.Add(new WorkRequest
-        {
-            Body = "the sink in 4B is dripping and there is water under the cabinet",
-            CreatedAt = DateTime.UtcNow
-        });
+        var body = "the sink in 4B is dripping and there is water under the cabinet";
+        var suggestion = pipeline.SuggestAsync(body).GetAwaiter().GetResult();
+        db.WorkRequests.Add(WorkRequest.FromIntake(body, suggestion));
         db.SaveChanges();
     }
 }
 
-// The site root just sends you to the list.
-app.MapGet("/", () => Results.Redirect("/requests"));
+app.MapRazorPages();
 
-app.MapGet("/requests", async (AppDbContext db) =>
+app.MapGet("/api/requests", async (AppDbContext db) =>
 {
-    // Newest first. CreatedAt is stored in UTC.
     var requests = await db.WorkRequests
         .OrderByDescending(r => r.CreatedAt)
         .ToListAsync();
@@ -44,15 +55,13 @@ app.MapGet("/requests", async (AppDbContext db) =>
     return Results.Ok(requests);
 });
 
-app.MapGet("/requests/{id:int}", async (int id, AppDbContext db) =>
+app.MapGet("/api/requests/{id:int}", async (int id, AppDbContext db) =>
 {
     var request = await db.WorkRequests.FindAsync(id);
-
-    // A missing id is a 404. An empty JSON object would look like a real row.
     return request is null ? Results.NotFound() : Results.Ok(request);
 });
 
-app.MapPost("/requests", async (NewRequest input, AppDbContext db) =>
+app.MapPost("/api/requests", async (NewRequest input, AppDbContext db, IntakePipeline pipeline) =>
 {
     var body = input.Body?.Trim();
     if (string.IsNullOrEmpty(body))
@@ -60,20 +69,82 @@ app.MapPost("/requests", async (NewRequest input, AppDbContext db) =>
         return Results.BadRequest(new { error = "body is required" });
     }
 
-    // The caller only sends the text. The id and the time are ours.
-    var request = new WorkRequest
-    {
-        Body = body,
-        CreatedAt = DateTime.UtcNow
-    };
-
+    var suggestion = await pipeline.SuggestAsync(body);
+    var request = WorkRequest.FromIntake(body, suggestion);
     db.WorkRequests.Add(request);
     await db.SaveChangesAsync();
 
-    return Results.Created($"/requests/{request.Id}", request);
+    return Results.Created($"/api/requests/{request.Id}", request);
+});
+
+app.MapPost("/api/requests/{id:int}/decision", async (
+    int id,
+    Decision input,
+    AppDbContext db,
+    SuggestionValidator validator) =>
+{
+    var request = await db.WorkRequests.FindAsync(id);
+    if (request is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (!validator.TryDecision(input.Category, input.Urgency, input.Reply, out var suggestion)
+        || suggestion is null)
+    {
+        return Results.BadRequest(new { error = "category, urgency, and reply must be valid" });
+    }
+
+    request.ApplyDecision(suggestion.Category, suggestion.Urgency, suggestion.Reply);
+    await db.SaveChangesAsync();
+    return Results.Ok(request);
 });
 
 app.Run();
 
-// The POST body. Kept apart from WorkRequest, which is the saved row.
+// The first commit of this app only had Body and CreatedAt.
+// EnsureCreated will not add columns, so that old file has to go.
+static void DropOldSchemaIfNeeded(AppDbContext db)
+{
+    var conn = db.Database.GetDbConnection();
+    conn.Open();
+    try
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='WorkRequests'";
+        if (cmd.ExecuteScalar() is null)
+        {
+            return;
+        }
+
+        cmd.CommandText = "PRAGMA table_info(WorkRequests)";
+        using var reader = cmd.ExecuteReader();
+        var hasSuggestion = false;
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), "SuggestedCategory", StringComparison.OrdinalIgnoreCase))
+            {
+                hasSuggestion = true;
+                break;
+            }
+        }
+
+        reader.Close();
+        if (!hasSuggestion)
+        {
+            conn.Close();
+            db.Database.EnsureDeleted();
+        }
+    }
+    finally
+    {
+        if (conn.State == System.Data.ConnectionState.Open)
+        {
+            conn.Close();
+        }
+    }
+}
+
 public record NewRequest(string? Body);
+
+public record Decision(string? Category, string? Urgency, string? Reply);

@@ -1,0 +1,72 @@
+@page "/requests/{id:int}"
+@using WorkOrderDesk.Intake
+@model WorkOrderDesk.Pages.RequestModel
+@{
+    ViewData["Title"] = "Request " + Model.Item!.Id;
+    var item = Model.Item;
+}
+
+<p><a href="/">Back to inbox</a></p>
+
+<h1>Request @item.Id</h1>
+<p class="lede">@item.Body</p>
+
+<dl>
+    <dt>Suggestion</dt>
+    <dd>@item.SuggestedCategory / @item.SuggestedUrgency</dd>
+    <dt>Where it came from</dt>
+    <dd>@item.SuggestionSource@(item.SuggestionConfident ? "" : " (not sure)")</dd>
+    <dt>Why</dt>
+    <dd>@item.SuggestedReason</dd>
+    <dt>Draft reply</dt>
+    <dd>@item.SuggestedReply</dd>
+</dl>
+
+@if (item.IsReviewed)
+{
+    <p class="ok">
+        Saved as @item.FinalCategory / @item.FinalUrgency at @item.ReviewedAt?.ToString("yyyy-MM-dd HH:mm").
+    </p>
+}
+
+<form method="post">
+    <label for="Category">Category</label>
+    <select id="Category" name="Category">
+        @foreach (var value in Labels.Categories)
+        {
+            if (value == Model.Category)
+            {
+                <option value="@value" selected>@value</option>
+            }
+            else
+            {
+                <option value="@value">@value</option>
+            }
+        }
+    </select>
+
+    <label for="Urgency">Urgency</label>
+    <select id="Urgency" name="Urgency">
+        @foreach (var value in Labels.Urgencies)
+        {
+            if (value == Model.Urgency)
+            {
+                <option value="@value" selected>@value</option>
+            }
+            else
+            {
+                <option value="@value">@value</option>
+            }
+        }
+    </select>
+
+    <label for="Reply">Reply to the resident</label>
+    <textarea id="Reply" name="Reply" rows="3" required>@Model.Reply</textarea>
+
+    @if (Model.Error is not null)
+    {
+        <p class="error">@Model.Error</p>
+    }
+
+    <button type="submit">Save decision</button>
+</form>

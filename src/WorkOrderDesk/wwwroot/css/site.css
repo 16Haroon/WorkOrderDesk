@@ -1,0 +1,99 @@
+body {
+    font-family: Georgia, "Times New Roman", serif;
+    max-width: 44rem;
+    margin: 2rem auto;
+    padding: 0 1rem 4rem;
+    color: #222;
+    background: #f7f4ee;
+}
+
+header {
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+header a {
+    color: #111;
+    font-weight: bold;
+    text-decoration: none;
+    margin-right: 0.75rem;
+}
+
+header span {
+    color: #555;
+    font-size: 0.95rem;
+}
+
+h1, h2 {
+    font-weight: normal;
+}
+
+.lede {
+    line-height: 1.45;
+}
+
+label {
+    display: block;
+    margin-top: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+textarea, select, button {
+    font: inherit;
+}
+
+textarea, select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem;
+}
+
+button {
+    margin-top: 0.9rem;
+    padding: 0.4rem 0.8rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+th, td {
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+    padding: 0.4rem 0.3rem;
+    vertical-align: top;
+}
+
+a {
+    color: #163a6b;
+}
+
+.error {
+    color: #8a1f1f;
+}
+
+.ok {
+    color: #1b5d2a;
+}
+
+.hint {
+    color: #555;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+dl {
+    line-height: 1.4;
+}
+
+dt {
+    margin-top: 0.6rem;
+    color: #555;
+}
+
+dd {
+    margin-left: 0;
+}
